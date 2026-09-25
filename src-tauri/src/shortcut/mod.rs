@@ -1340,10 +1340,74 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
 pub fn change_show_tray_icon_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.show_tray_icon = enabled;
+    // menu_bar_only depends on the tray icon as the only way back into a
+    // Dock-less, Cmd+Tab-less app; disabling the tray must disable it too,
+    // otherwise the app can end up with no Dock icon and no tray icon at all.
+    let menu_bar_only_disabled = !enabled && settings.menu_bar_only;
+    if menu_bar_only_disabled {
+        settings.menu_bar_only = false;
+    }
     settings::write_settings(&app, settings);
 
     // Apply change immediately
     tray::set_tray_visibility(&app, enabled);
+
+    #[cfg(target_os = "macos")]
+    if menu_bar_only_disabled {
+        if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+            error!("Failed to set activation policy to Regular: {}", e);
+        }
+    }
+
+    if menu_bar_only_disabled {
+        let _ = app.emit(
+            "settings-changed",
+            serde_json::json!({
+                "setting": "menu_bar_only",
+                "value": false
+            }),
+        );
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_menu_bar_only_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.menu_bar_only = enabled;
+    if enabled {
+        // The tray icon is the only way back into a Dock-less, Cmd+Tab-less
+        // app, so turning this on forces it on too.
+        settings.show_tray_icon = true;
+    }
+    settings::write_settings(&app, settings);
+
+    if enabled {
+        tray::set_tray_visibility(&app, true);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if enabled {
+            tauri::ActivationPolicy::Accessory
+        } else {
+            tauri::ActivationPolicy::Regular
+        };
+        if let Err(e) = app.set_activation_policy(policy) {
+            error!("Failed to set activation policy: {}", e);
+        }
+    }
+
+    // Notify frontend (the Show Tray Icon toggle may have been forced on)
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "menu_bar_only",
+            "value": enabled
+        }),
+    );
 
     Ok(())
 }
