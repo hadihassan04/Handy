@@ -107,8 +107,12 @@ fn show_main_window(app: &AppHandle) {
         }
         #[cfg(target_os = "macos")]
         {
-            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                log::error!("Failed to set activation policy to Regular: {}", e);
+            // Menu-bar-only mode keeps the app out of the Dock/Cmd+Tab even
+            // while its window is showing (see change_menu_bar_only_setting).
+            if !get_settings(app).menu_bar_only {
+                if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+                    log::error!("Failed to set activation policy to Regular: {}", e);
+                }
             }
         }
         return;
@@ -146,13 +150,15 @@ fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
     }
 
     let cli_args = app.state::<CliArgs>().inner().clone();
-    let settings = settings::get_settings(app.handle());
+    let settings = get_settings(app.handle());
 
     let should_hide = settings.start_hidden || cli_args.start_hidden;
     let tray_available = settings.show_tray_icon && !cli_args.no_tray;
 
-    if should_hide && tray_available {
-        log::info!("Starting hidden with tray available: launching as Accessory (no Dock icon)");
+    if (should_hide || settings.menu_bar_only) && tray_available {
+        log::info!(
+            "Starting hidden or menu-bar-only with tray available: launching as Accessory (no Dock icon)"
+        );
         app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
 }
@@ -702,6 +708,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_keyboard_implementation_setting,
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
+            shortcut::change_menu_bar_only_setting,
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_ort_accelerator_setting,
             shortcut::change_transcribe_gpu_device,

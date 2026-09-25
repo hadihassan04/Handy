@@ -1348,6 +1348,46 @@ pub fn change_show_tray_icon_setting(app: AppHandle, enabled: bool) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_menu_bar_only_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.menu_bar_only = enabled;
+    if enabled {
+        // The tray icon is the only way back into a Dock-less, Cmd+Tab-less
+        // app, so turning this on forces it on too.
+        settings.show_tray_icon = true;
+    }
+    settings::write_settings(&app, settings);
+
+    if enabled {
+        tray::set_tray_visibility(&app, true);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if enabled {
+            tauri::ActivationPolicy::Accessory
+        } else {
+            tauri::ActivationPolicy::Regular
+        };
+        if let Err(e) = app.set_activation_policy(policy) {
+            error!("Failed to set activation policy: {}", e);
+        }
+    }
+
+    // Notify frontend (the Show Tray Icon toggle may have been forced on)
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "menu_bar_only",
+            "value": enabled
+        }),
+    );
+
+    Ok(())
+}
+
 /// Save accelerator settings and make the next model use reload with them.
 /// The currently running transcription, if any, keeps its existing engine.
 fn save_accelerator_and_reload_next_use(app: &AppHandle, s: settings::AppSettings) {
