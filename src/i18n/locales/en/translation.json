@@ -299,6 +299,10 @@
         "label": "Show Tray Icon",
         "description": "Display the Handy icon in the system tray."
       },
+      "menuBarOnly": {
+        "label": "Menu Bar Only",
+        "description": "Hide Handy from the Dock and Cmd+Tab switcher. Use the menu bar icon to open or quit the app."
+      },
       "overlay": {
         "style": {
           "title": "Overlay",
